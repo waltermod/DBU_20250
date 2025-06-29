@@ -1,0 +1,153 @@
+FarmModMenu.lua
+local plr = game.Players.LocalPlayer
+local char = plr.Character or plr.CharacterAdded:Wait()
+local rs = game:GetService("RunService")
+local vUser = game:service("VirtualUser")
+local rep = game:GetService("ReplicatedStorage")
+local events = rep.Package.Events
+local data = rep.Datas[plr.UserId]
+local workspaceNPCs = workspace.Live
+
+local STATS_MIN = 4000
+local SKILL = "Punch"
+local NPC_LIST = {"Hyper Broly", "Ultra Goku", "Training Dummy"}
+
+-- Variáveis de controle (default ativado)
+local autoFarm = true
+local autoTransform = true
+local autoBlock = true
+local priorizarBoss = true
+
+-- Anti AFK
+plr.Idled:Connect(function()
+	vUser:Button2Down(Vector2.new(0,0))
+	wait(1)
+	vUser:Button2Up(Vector2.new(0,0))
+end)
+
+local function equiparSkill()
+	if autoFarm then
+		events.equipskill:FireServer(SKILL)
+	end
+end
+
+local function transformar()
+	if autoTransform then
+		events.transform:FireServer(true)
+	end
+end
+
+local function bloquear()
+	if autoBlock then
+		events.block:FireServer(true)
+		wait(0.3)
+		events.block:FireServer(false)
+	end
+end
+
+local function teleportarAlvo(npc)
+	if npc and npc:FindFirstChild("HumanoidRootPart") then
+		char:WaitForChild("HumanoidRootPart").CFrame = npc.HumanoidRootPart.CFrame * CFrame.new(0,0,-3.5)
+	end
+end
+
+local function atacar()
+	if autoFarm then
+		events.combat:FireServer(true)
+	end
+end
+
+local function checarStats()
+	local s = data.Stats
+	return s.Strength.Value >= STATS_MIN and s.Defense.Value >= STATS_MIN
+end
+
+local function setupCharacter(newChar)
+	char = newChar
+	wait(1)
+	if autoTransform then
+		transformar()
+	end
+end
+plr.CharacterAdded:Connect(setupCharacter)
+
+spawn(function()
+	while true do
+		if plr.Character and plr.Character:FindFirstChild("Humanoid") then
+			if plr.Character.Humanoid.Health <= 0 then
+				repeat wait(1) until plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0
+				if autoTransform then
+					transformar()
+				end
+			end
+		end
+		wait(1)
+	end
+end)
+
+local function encontrarMelhorNPC()
+	local alvo = nil
+	for _, nome in ipairs(NPC_LIST) do
+		for _, npc in ipairs(workspaceNPCs:GetChildren()) do
+			if npc.Name:lower():find(nome:lower()) and npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 then
+				alvo = npc
+				if priorizarBoss then return alvo end
+			end
+		end
+	end
+	return alvo
+end
+
+-- Criar Mod Menu UI
+local screenGui = Instance.new("ScreenGui", plr.PlayerGui)
+screenGui.Name = "ModMenuFarm"
+
+local function criarBotao(nome, pos, funcaoToggle, getStatus)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0,150,0,40)
+	btn.Position = pos
+	btn.BackgroundColor3 = Color3.fromRGB(30,30,30)
+	btn.TextColor3 = Color3.new(1,1,1)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 18
+	btn.Text = nome..": "..(getStatus() and "ON" or "OFF")
+	btn.Parent = screenGui
+	btn.MouseButton1Click:Connect(function()
+		funcaoToggle()
+		btn.Text = nome..": "..(getStatus() and "ON" or "OFF")
+	end)
+	return btn
+end
+
+criarBotao("Auto Farm", UDim2.new(0,20,0,20), function()
+	autoFarm = not autoFarm
+end, function() return autoFarm end)
+
+criarBotao("Auto Transform", UDim2.new(0,20,0,70), function()
+	autoTransform = not autoTransform
+	if autoTransform then transformar() end
+end, function() return autoTransform end)
+
+criarBotao("Auto Block", UDim2.new(0,20,0,120), function()
+	autoBlock = not autoBlock
+end, function() return autoBlock end)
+
+criarBotao("Priorizar Boss", UDim2.new(0,20,0,170), function()
+	priorizarBoss = not priorizarBoss
+end, function() return priorizarBoss end)
+
+-- Loop principal do farm
+rs.RenderStepped:Connect(function()
+	pcall(function()
+		if not checarStats() then return end
+		if not autoFarm then return end
+		local alvo = encontrarMelhorNPC()
+		if alvo then
+			equiparSkill()
+			if autoTransform then transformar() end
+			teleportarAlvo(alvo)
+			atacar()
+			bloquear()
+		end
+	end)
+end)
